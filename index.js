@@ -8,6 +8,7 @@ const bot = new Bot(process.env.BOT_API_KEY);
 bot.use(hydrate());
 
 const TARGET_CHAT_ID = -1002406307871;
+const TARGET_GROUP = -1002162448649;
 const userLastMessages = new Map(); 
 
 bot.api.setMyCommands([
@@ -219,35 +220,56 @@ bot.command('start', async (ctx) => {
     })
 })
 
-bot.callbackQuery('sub1', async (ctx) => {
-     try {
+bot.callbackQuery('sub1', async (ctx) => { 
+    try {
         await ctx.answerCallbackQuery("Проверяем подписку...");
         
-        const userId = ctx.from.id;
-        const chatMember = await ctx.api.getChatMember(TARGET_CHAT_ID, userId);
-        const timestamp = Date.now();
-
-        if (["member", "administrator", "creator"].includes(chatMember.status)) {
-
-            await ctx.reply('Можем приступать к работе',{
-                reply_markup: mainKeyboard,
-            })
-
-        } else {
-
-            const newKeyboard = new InlineKeyboard()
-                .url("Подписаться", `https://t.me/SmartDealsLTDink?check=${timestamp}`).row()
-                .text("Проверить снова", "sub1");
-
-            await ctx.editMessageText(`Вы ещё не подписаны на канал!`, {
-                parse_mode: 'HTML',
-                reply_markup: newKeyboard,
-            });
-
+        if (!ctx.from) {
+            throw new Error("Не удалось получить данные пользователя");
         }
-    } catch (err) {
-        console.error("Ошибка проверки подписки:",err);
-        await ctx.answerCallbackQuery("Ошибка проверки подписки. Попробуйте позже.");
+        
+        const userId = ctx.from.id;
+        const timestamp = Date.now();
+        
+        try {
+
+            const chatMember = await ctx.api.getChatMember(TARGET_GROUP, userId);
+            
+            if (["member", "creator", "administrator"].includes(chatMember.status)) {
+                await ctx.reply('Можем приступать к работе',{
+                    reply_markup: mainKeyboard,
+                })
+
+            } else {
+                const newKeyboard = new InlineKeyboard()
+                    .url("Подписаться 🔗", `https://t.me/SmartDealsLTDink?check=${timestamp}`).row()
+                    .text("Проверить снова 🔄", "sub1");
+
+                await ctx.reply(`Вы ещё не подписаны на канал!`, {
+                    parse_mode: 'HTML',
+                    reply_markup: newKeyboard,
+                });
+            }
+        } catch (apiError) {
+            console.error("Ошибка API при проверке подписки:", apiError);
+        
+            if (apiError.description.includes("bot is not a member") || 
+                apiError.description.includes("chat not found")) {
+                await ctx.reply("Бот не может проверить подписку. Пожалуйста, сообщите администратору.");
+            } else {
+                const newKeyboard = new InlineKeyboard()
+                    .url("Подписаться 🔗", `https://t.me/SmartDealsLTDink?check=${timestamp}`).row()
+                    .text("Проверить снова 🔄", "sub1");
+
+                await ctx.reply(`Не удалось проверить подписку. Попробуйте подписаться и проверьте снова:`, {
+                    parse_mode: 'HTML',
+                    reply_markup: newKeyboard,
+                });
+            }
+        }
+        } catch (err) {
+            console.error("Ошибка проверки подписки:",err);
+            await ctx.answerCallbackQuery("Ошибка проверки подписки. Попробуйте позже.");
     }
 })
 
