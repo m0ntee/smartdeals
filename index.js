@@ -10,6 +10,8 @@ bot.use(hydrate());
 const TARGET_CHAT_ID = -1002406307871;
 const TARGET_GROUP = -1002162448649;
 const userLastMessages = new Map(); 
+const CACH_TTL =  10 * 1000;
+const subscriptionCache = new Map();
 
 bot.api.setMyCommands([
     {
@@ -212,6 +214,51 @@ const emailKeyboard = new InlineKeyboard()
     .text('Отправил не тот адрес, вернуться назад', 'backward').row()
     .text('Всё верно!', 'ok');
 
+async function checkSubscription(ctx) {
+    if (!ctx.from) return false;
+
+    const userId = ctx.from.id;
+
+    try {
+        if (subscriptionCache.has(userId)){
+            return subscriptionCache.get(userId);
+        }
+        
+        const chatMember = await ctx.api.getChatMember(TARGET_GROUP, userId);
+        const isSubscriped = ["member", "creator", "administrator"].includes(chatMember.status);
+
+        subscriptionCache.set(userId, isSubscriped);
+
+        setTimeout(() => subscriptionCache.delete(userId), CACH_TTL);
+
+        return isSubscriped;
+    } catch (error) {
+        console.error("Ошибка проверки подписки:", error);
+        return false;
+    }
+}
+
+bot.use(async (ctx, next) => {
+    if (ctx.message?.text?.startsWith('/start') || ctx.callbackQuery) {
+        return next();
+    }
+
+    const isSubscriped = await checkSubscription(ctx);
+
+    if (!isSubscriped) {
+        const timestamp = Date.now();
+        const newKeyboard = new InlineKeyboard()
+            .url("Подписаться 🔗", `https://t.me/SmartDealsLTDink?check=${timestamp}`).row()
+            .text("Проверить снова 🔄", "sub1");
+        return ctx.reply(`❌ Для использования бота необходимо подписаться на канал!`, {
+            parse_mode: 'HTML',
+            reply_markup: newKeyboard
+        });
+        return
+    }
+    return next();
+})
+
 bot.command('start', async (ctx) => {
     await ctx.react('❤‍🔥')
     await ctx.reply('Привет! Для начала работы подпишись на канал: <a href="https://t.me/SmartDealsLTDink">ссылка</a>', {
@@ -222,8 +269,10 @@ bot.command('start', async (ctx) => {
 
 bot.callbackQuery('sub1', async (ctx) => { 
     try {
-        await ctx.answerCallbackQuery("Проверяем подписку...");
+        await ctx.answerCallbackQuery("🔍 Проверяем подписку...");
         
+        // const isSubscribed = await checkSubscription(ctx);
+
         if (!ctx.from) {
             throw new Error("Не удалось получить данные пользователя");
         }
